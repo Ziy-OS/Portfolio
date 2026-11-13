@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.UI;
 using UnityEngine.InputSystem;
 
 // Making everything public and adjustable
@@ -23,7 +24,24 @@ public class TelekinesisController : MonoBehaviour
     private GrabbableObject targetedObject;
     private bool isHolding;
 
+    [Header("Energy Settings")]
+    [SerializeField] private FloatVariableSO energyVariable;
+    [SerializeField] private TelekinesisGameEventSO energyChangedEvent;
+    //[SerializeField] private Slider energyBar;
+    [SerializeField] private float maxEnergy = 100f;
+    [SerializeField] private float energyDrainRate = 20f;
+    [SerializeField] private float energyRegenRate = 15f;
+    
+    //private float currentEnergy;
+
     private bool originalUseGravity;
+
+    private void Start()
+    {
+        energyVariable.value = maxEnergy;
+        energyChangedEvent.Raise();
+    }
+
 
     private void Update()
     {
@@ -32,9 +50,13 @@ public class TelekinesisController : MonoBehaviour
         if (grabAction.action.WasPressedThisFrame())
         {
             if (isHolding)
+            {
                 ReleaseObject();
-            else if (targetedObject != null)
+            }
+            else if (targetedObject != null && energyVariable.value > 0f) // added energy constraint
+            {
                 GrabObject(targetedObject);
+            }
         }
 
         if (isHolding &&
@@ -42,7 +64,46 @@ public class TelekinesisController : MonoBehaviour
         {
             ThrowObject();
         }
+
+        UpdateEnergy();
     }
+
+    private void UpdateEnergy()
+    {
+        float previousEnergy = energyVariable.value;
+
+    
+        if (isHolding)
+        {
+            energyVariable.value -= energyDrainRate * Time.deltaTime;
+
+            if (energyVariable.value <= 0f) // autimatically release object when energy runs out
+            {
+                energyVariable.value = 0f;
+                ReleaseObject();
+            }
+        }
+        else
+        {
+            energyVariable.value += energyRegenRate * Time.deltaTime; // regen energy when cat is not holding object
+        }
+
+        energyVariable.value = Mathf.Clamp(energyVariable.value, 0f, maxEnergy); // prevent energy from going below zero or above max
+
+        if (Mathf.Abs(previousEnergy - energyVariable.value) > 0.001f)
+        {
+            energyChangedEvent.Raise(); // notify UI when energy chanegs
+        }
+    }
+
+
+    // private void UpdateEnergyBar()
+    // {
+    //     if(energyBar != null)
+    //     {
+    //         energyBar.value = energyVariable.value; // set slider to match current energy
+    //     }
+    // }
 
     private void FixedUpdate()
     {

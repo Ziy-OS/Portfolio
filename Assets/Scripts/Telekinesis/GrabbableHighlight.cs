@@ -2,79 +2,88 @@ using UnityEngine;
 
 public class GrabbableHighlight : MonoBehaviour
 {
-    [SerializeField] private Color highlightColor = Color.cyan;
-    [SerializeField, Range(0f, 1f)]
-    private float highlightStrength = 1f;
+    [Header("Highlight Material")]
+    [SerializeField] private Material highlightMaterial;
 
     private Renderer[] renderers;
-    private MaterialPropertyBlock propertyBlock;
-    private Color[][] originalColors;
-    private int[][] colorPropertyIDs;
+    private Material[][] originalMaterials;
+    private Material[][] runtimeMaterials;
+
+    private static readonly int HighlightEnabled =
+        Shader.PropertyToID("_HighlightEnabled");
 
     private bool isHighlighted;
 
     private void Awake()
     {
+        // Find all renderers on this object and its children.
         renderers = GetComponentsInChildren<Renderer>();
-        propertyBlock = new MaterialPropertyBlock();
 
-        originalColors = new Color[renderers.Length][];
-        colorPropertyIDs = new int[renderers.Length][];
+        // Store the original materials so we can restore them.
+        originalMaterials = new Material[renderers.Length][];
+        runtimeMaterials = new Material[renderers.Length][];
 
         for (int i = 0; i < renderers.Length; i++)
         {
-            Material[] materials = renderers[i].sharedMaterials;
+            originalMaterials[i] = renderers[i].sharedMaterials;
 
-            originalColors[i] = new Color[materials.Length];
-            colorPropertyIDs[i] = new int[materials.Length];
+            runtimeMaterials[i] =
+                new Material[originalMaterials[i].Length];
 
-            for (int j = 0; j < materials.Length; j++)
+            // Create an individual highlight material for each slot.
+            for (int j = 0; j < originalMaterials[i].Length; j++)
             {
-                Material mat = materials[j];
+                runtimeMaterials[i][j] =
+                    new Material(highlightMaterial);
 
-                int colorID = mat.HasProperty("_BaseColor")
-                    ? Shader.PropertyToID("_BaseColor")
-                    : Shader.PropertyToID("_Color");
-
-                colorPropertyIDs[i][j] = colorID;
-
-                if (mat.HasProperty(colorID))
-                    originalColors[i][j] = mat.GetColor(colorID);
+                // Start with the highlight disabled.
+                runtimeMaterials[i][j].SetFloat(
+                    HighlightEnabled, 0f
+                );
             }
         }
     }
 
-    public void SetHighlight(bool enabled)
+        
+public void SetHighlight(bool enabled)
+{
+    if (isHighlighted == enabled)
+        return;
+
+    isHighlighted = enabled;
+
+    for (int i = 0; i < renderers.Length; i++)
     {
-        if (isHighlighted == enabled)
-            return;
-
-        isHighlighted = enabled;
-
-        for (int i = 0; i < renderers.Length; i++)
+        if (enabled)
         {
-            for (int j = 0; j < originalColors[i].Length; j++)
+            // Tell the Shader Graph to switch to cyan.
+            foreach (Material mat in runtimeMaterials[i])
             {
-                renderers[i].GetPropertyBlock(propertyBlock, j);
-
-                int colorID = colorPropertyIDs[i][j];
-
-                Color targetColor = enabled
-                    ? Color.Lerp(
-                        originalColors[i][j],
-                        highlightColor,
-                        highlightStrength)
-                    : originalColors[i][j];
-
-                propertyBlock.SetColor(colorID, targetColor);
-                renderers[i].SetPropertyBlock(propertyBlock, j);
+                mat.SetFloat(HighlightEnabled, 1f);
             }
+
+            // Apply the highlight material.
+            renderers[i].materials = runtimeMaterials[i];
+        }
+        else
+        {
+            // Restore the object's original materials.
+            renderers[i].sharedMaterials = originalMaterials[i];
         }
     }
+}
 
-    private void OnDisable()
+
+    private void OnDestroy()
     {
-        if (isHighlighted)
-            SetHighlight(false);
+        // Clean up the materials created at runtime.
+        for (int i = 0; i < runtimeMaterials.Length; i++)
+        {
+            for (int j = 0; j < runtimeMaterials[i].Length; j++)
+            {
+                if (runtimeMaterials[i][j] != null)
+                    Destroy(runtimeMaterials[i][j]);
+            }
+        }
     }
 }
